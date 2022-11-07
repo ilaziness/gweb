@@ -3,6 +3,7 @@ package gweb
 import (
 	"log"
 	"net/http"
+	"strings"
 )
 
 type HandleFunc func(*Context)
@@ -13,13 +14,18 @@ func defaultHandler(g *Context) {
 
 // Engine 框架核心
 type Engine struct {
+	*RouterGroup
 	router *router
+	groups []*RouterGroup
 }
 
 func NewDefault() *Engine {
-	return &Engine{
+	engine := &Engine{
 		router: newRouter(),
 	}
+	engine.RouterGroup = &RouterGroup{engine: engine}
+	engine.groups = []*RouterGroup{engine.RouterGroup}
+	return engine
 }
 
 // Run 启动运行服务
@@ -29,7 +35,17 @@ func (e *Engine) Run(addr string) error {
 
 // ServeHTTP 实现Handler接口
 func (e *Engine) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	e.handle(newContext(w, req))
+	var middleware []HandleFunc
+	// 找到所有需要应用的中间件
+	for _, group := range e.groups {
+		if strings.HasPrefix(req.URL.Path, group.prefix) {
+			middleware = append(middleware, group.middlewares...)
+		}
+	}
+	c := newContext(w, req)
+	// 需要应用的中间件放到请求的handlers里面待执行
+	c.handlers = middleware
+	e.handle(c)
 	//fmt.Fprintf(w, "Hello, %q", html.EscapeString(req.URL.Path))
 }
 
@@ -38,16 +54,21 @@ func (e *Engine) handle(g *Context) {
 	log.Println(g.Path)
 	n, params := e.router.Match(g.Method, g.Path)
 	if n == nil && g.Path == "/" {
-		defaultHandler(g)
-		return
+		// 默认路由
+		g.handlers = append(g.handlers, defaultHandler)
+	} else if n == nil {
+		// 404
+		g.handlers = append(g.handlers, func(c *Context) {
+			c.String(http.StatusNotFound, "404 NOT FOUND")
+		})
+	} else {
+		g.Params = params
+		key := g.Method + "-" + n.pattern
+		// 路由handler，放到待执行列表最后
+		g.handlers = append(g.handlers, e.router.handlers[key])
 	}
-	if n == nil {
-		g.String(http.StatusNotFound, "404 NOT FOUND")
-		return
-	}
-	g.Params = params
-	key := g.Method + "-" + n.pattern
-	e.router.handlers[key](g)
+	// 开始执行中间件
+	g.Next()
 }
 
 // AddRoute 添加路由记录

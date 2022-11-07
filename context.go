@@ -21,6 +21,9 @@ type Context struct {
 	StatusCode int
 	// url匹配到的参数，包含路由参数和url query的参数
 	Params map[string]string
+	//middleware,中间件也是一个普通的handler
+	handlers []HandleFunc
+	index    int
 }
 
 func newContext(w http.ResponseWriter, req *http.Request) *Context {
@@ -29,6 +32,7 @@ func newContext(w http.ResponseWriter, req *http.Request) *Context {
 		Req:    req,
 		Path:   req.URL.Path,
 		Method: req.Method,
+		index:  -1,
 	}
 }
 
@@ -60,7 +64,23 @@ func (c *Context) JSON(code int, obj any) {
 	}
 }
 
+func (c *Context) HTML(code int, html string) {
+	c.SetHeader("Content-Type", "text/html")
+	c.Status(code)
+	c.Writer.Write([]byte(html))
+}
+
 // RespServerError 返回500错误
 func (c *Context) RespServerError(err string) {
 	http.Error(c.Writer, err, http.StatusInternalServerError)
+}
+
+// Next 执行下一个中间件
+// 依次执行c.handlers待执行的中间件和路由handler
+func (c *Context) Next() {
+	c.index++
+	s := len(c.handlers)
+	for ; c.index < s; c.index++ {
+		c.handlers[c.index](c)
+	}
 }

@@ -1,6 +1,7 @@
 package gweb
 
 import (
+	"log"
 	"strings"
 )
 
@@ -13,7 +14,8 @@ type node struct {
 	// 路由path里面的一段
 	part     string
 	children []*node
-	isWild   bool
+	// 标记节点是否是匹配参数的路径，类似:id、:name的路径节点
+	isWild bool
 }
 
 // router 路由对象
@@ -118,7 +120,7 @@ func (n *node) insert(pattern string, parts []string, height int) {
 // 根据url path的节点一直往下搜索到最后一个,全部匹配说明这个路由匹配成功
 func (n *node) search(parts []string, height int) *node {
 	// 根据path的节点，已经匹配到最后一个节点了，pattern不为空则匹配成功，否则失败
-	// 上面insert的时候，路由path的最后一个节点才会设置pattern的值，之间节点是为空的
+	// 上面insert的时候，路由path的最后一个节点才会设置pattern的值，之前的节点是为空的
 	if len(parts) == height || strings.HasPrefix(n.part, "*") {
 		//只要判断pattern的值是否为空就知道搜索的链条是否和url path匹配
 		if n.pattern == "" {
@@ -156,4 +158,43 @@ func (n *node) findAllChild(part string) []*node {
 		}
 	}
 	return nodes
+}
+
+// 路由分组
+type RouterGroup struct {
+	prefix string
+	// 中间件挂在路由分组上
+	middlewares []HandleFunc
+	parent      *RouterGroup
+	engine      *Engine
+}
+
+func (group *RouterGroup) Group(prefix string) *RouterGroup {
+	newGroup := &RouterGroup{
+		prefix: group.prefix + prefix,
+		parent: group,
+		engine: group.engine,
+	}
+	group.engine.groups = append(group.engine.groups, newGroup)
+	return newGroup
+}
+
+// addRoute 添加路由
+func (group *RouterGroup) addRoute(method string, comp string, handler HandleFunc) {
+	// 分组添加路由，路由匹配模式是分组路径加上当前路径
+	pattern := group.prefix + comp
+	log.Printf("Route %4s - %s", method, pattern)
+	group.engine.router.AddRoute(method, pattern, handler)
+}
+
+func (group *RouterGroup) GET(pattern string, handler HandleFunc) {
+	group.addRoute("GET", pattern, handler)
+}
+
+func (group *RouterGroup) POST(pattern string, handler HandleFunc) {
+	group.addRoute("POST", pattern, handler)
+}
+
+func (group *RouterGroup) Use(middlewares ...HandleFunc) {
+	group.middlewares = append(group.middlewares, middlewares...)
 }
