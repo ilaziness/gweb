@@ -19,6 +19,10 @@ func main() {
 		fmt.Println("hello")
 		g.JSON(200, map[string]any{"a": 1, "b": "hello"})
 	})
+	g.GET("/panic", func(g *gweb.Context) {
+		names := []string{"gweb"}
+		g.String(http.StatusOK, names[3])
+	})
 
 	v1 := g.Group("/v1")
 	{

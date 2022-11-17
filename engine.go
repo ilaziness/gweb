@@ -25,6 +25,7 @@ func NewDefault() *Engine {
 	}
 	engine.RouterGroup = &RouterGroup{engine: engine}
 	engine.groups = []*RouterGroup{engine.RouterGroup}
+	engine.Use(recovery())
 	return engine
 }
 
